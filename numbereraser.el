@@ -57,7 +57,10 @@ Initial board state is immutable. it is used to reset board back whenever need a
   "Column of currently active sync")
 
 (defconst *neraser-cell-width* 4
-  "number of characters in cell border on board")
+  "number of characters in cell border on board, not counting corners")
+
+(defconst *neraser-cell-height* 4
+  "number of lines in board cell including upper border (but not lower)")
 
 (defvar *neraser-default-maps*
   '(([4 1]
@@ -195,19 +198,18 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
   (define-key neraser-mode-map (kbd "M-p") 'neraser-go-prev-sync)
   (define-key neraser-mode-map (kbd "M-n") 'neraser-go-next-sync)
   (define-key neraser-mode-map (kbd "r") 'neraser-reset))
-  
 
-(defun neraser-game ()
-  "Start playing number eraser game"
-  (interactive)
+(defun neraser-game (n)
+  "Start playing number eraser game on board number n (0 by default)"
+  (interactive "P")
   (switch-to-buffer "*Number eraser*")
   (neraser-mode)
-  (neraser-init))
+  (neraser-init (if n (prefix-numeric-value n) 0)))
 
-(defun neraser-init ()
-  "Prepare to start the game"
+(defun neraser-init (n)
+  "Prepare to start the game on nth map"
   ;; prepare board by loading map
-  (or (neraser-load-map (car *neraser-default-maps*))
+  (or (neraser-load-map (nth n *neraser-default-maps*))
       (print "Failed to load map ((( \n"))
   ;; reset step counter to zero
   (setf *neraser-step-counter* 0)
@@ -216,7 +218,8 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
   (setf *neraser-sync-column* 0)
   (neraser-next-sync)
   ;; display board
-  (neraser-draw-board))
+  (neraser-draw-board)
+  (neraser-goto-cell *neraser-sync-row* *neraser-sync-column*))
 
 (defmacro deconstruct-index (index row column)
   "Set provided row and column variables to position on board referred by index"
@@ -230,36 +233,46 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
           (setf ,row *neraser-rows*)
           (setf ,column *neraser-columns*))))))
 
+(defun eq-left2 (left right)
+  "Helper funtion that tests if right is equal to any of 2 elements in left"
+  (cl-destructuring-bind (l1 l2) left
+    (or (eq l1 right)
+        (eq l2 right))))
+
 (defun neraser-next-sync ()
   "Find next sync and set current board position to it"
   (let* ((current-sync-index (neraser-cell-index *neraser-sync-row* *neraser-sync-column*))
-         (next-sync-index (position '*sync* *neraser-board*
+         (next-sync-index (position '(*sync* *c-sync*) *neraser-board*
                                     :key 'car
+                                    :test 'eq-left2
                                     :start (1+ current-sync-index)
                                     :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*))))
     (if next-sync-index
         (deconstruct-index next-sync-index *neraser-sync-row* *neraser-sync-column*)
-      (deconstruct-index (position '*sync* *neraser-board*
-                                    :key 'car
-                                    :start 0
-                                    :end (1+ current-sync-index))
+      (deconstruct-index (position '(*sync* *c-sync*) *neraser-board*
+                                   :key 'car
+                                   :test 'eq-left2
+                                   :start 0
+                                   :end (1+ current-sync-index))
                          *neraser-sync-row* *neraser-sync-column*))))
 
 (defun neraser-prev-sync ()
   "Find prev sync and set current board position to it"
   (let* ((current-sync-index (neraser-cell-index *neraser-sync-row* *neraser-sync-column*))
-         (prev-sync-index (position '*sync* *neraser-board*
+         (prev-sync-index (position '(*sync* *c-sync*) *neraser-board*
                                     :key 'car
+                                    :test 'eq-left2
                                     :start 0
                                     :end current-sync-index
                                     :from-end)))
     (if prev-sync-index
         (deconstruct-index prev-sync-index *neraser-sync-row* *neraser-sync-column*)
-      (deconstruct-index (position '*sync* *neraser-board*
-                                    :key (lambda (elem) (car elem))
-                                    :start current-sync-index
-                                    :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*)
-                                    :from-end)
+      (deconstruct-index (position '(*sync* *c-sync*) *neraser-board*
+                                   :key car
+                                   :test 'eq-left2
+                                   :start current-sync-index
+                                   :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*)
+                                   :from-end)
                          *neraser-sync-row* *neraser-sync-column*))))
 
 (defun neraser-left-angle (row col)
@@ -312,12 +325,19 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
 
 (defun neraser-cell-content (row col)
   "Form string based on cell's contents"
-  (let ((content (neraser-get-cell row col)))
+  (let* ((content (neraser-get-cell row col))
+         (type (car content)))
     (cond
-     ((eq (car content) '*cell*)
-      (format "%3d " (nthelt 0 (cdr content))))
-     ((eq (car content) '*sync*)
-      (replace-regexp-in-string " " "*" (format "%3d " (cdr content))))
+     ((eq type '*cell*)
+      (format "%2d/%1d" (nthelt 0 (cdr content)) (nthelt 1 (cdr content))))
+     ((eq type '*sync*)
+      (if (eq 0 (cdr content)) ; test if sync cannot be moved anymore
+          "*VV*"
+        (replace-regexp-in-string " " "*" (format "%3d " (cdr content)))))
+     ((eq type '*c-sync*)
+      (if (eq 0 (nthelt 0 (cdr content)))
+          "*VV*"
+        (replace-regexp-in-string " " "*" (format "%3d " (nthelt 0 (cdr content))))))
      ((or t (null content))
       (neraser-empty-space row col)))))
 
@@ -356,3 +376,103 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
         (char (* (1+ *neraser-cell-width*) column)))
     (move-to-window-line (1- line))
     (forward-char (- char 2))))
+
+(defun neraser-goto-cell (row column)
+  "Put cursor into cell on the game board"
+  ;; beginning of the buffer
+  (goto-char (point-min))
+  ;; 2 lines lower then the upper border of a cell
+  (forward-line (+ (* *neraser-cell-height* row) 2))
+  ;; we place cursor on the first position of the middle line of a cell
+  (forward-char (1+ (* (1+ *neraser-cell-width*) column))))
+
+(defun neraser-go-next-sync ()
+  "Select next sync and move cursor there"
+  (interactive)
+  (neraser-next-sync)
+  (neraser-goto-cell *neraser-sync-row* *neraser-sync-column*))
+
+(defun neraser-go-prev-sync ()
+  "Select prev sync and move cursor there"
+  (interactive)
+  (neraser-prev-sync)
+  (neraser-goto-cell *neraser-sync-row* *neraser-sync-column*))
+
+(defun neraser-reset ()
+  "Reset game board to initial state"
+  ;; reset steps counter
+  (interactive)
+  (setq *neraser-step-counter* 0)
+  (setf *neraser-board* (copy-tree *neraser-initial-board* t))
+  (neraser-next-sync)
+  (neraser-draw-board)
+  (neraser-goto-cell *neraser-sync-row* *neraser-sync-column*))
+
+(defun neraser-generic-move (row-shift col-shift dirstring)
+  "Change current sync row to (row-shift row), column to (col-shift col) in the direction described by dirstring"
+  (let ((current-sync (neraser-get-cell *neraser-sync-row* *neraser-sync-column*))
+        (future-sync (neraser-get-cell (funcall row-shift *neraser-sync-row*) (funcall col-shift *neraser-sync-column*))))
+    (if (and current-sync
+             future-sync
+             (or (eq (car current-sync) '*sync*)
+                 (eq (car current-sync) '*c-sync*))
+             (eq (car future-sync) '*cell*)
+             (> (nthelt 1 (cdr future-sync)) 0))
+        (progn
+          ;(debug)
+          (message (format "Moving current sync %s" dirstring))
+          (cl-destructuring-bind 
+            (current-val current-cell current-count future-cell future-count)
+            (append (if (eq (car current-sync) '*sync*)
+                        (list (cdr current-sync) 0 0)
+                      (cdr current-sync))
+                    (cdr future-sync) nil)
+            (setcdr future-sync `[,(- current-val future-cell) ,future-cell ,(1- future-count)])
+            (setcdr current-sync `[,current-cell ,current-count])
+            (setcar future-sync '*c-sync*)
+            (setcar current-sync '*cell*))
+          (setq *neraser-sync-row* (funcall row-shift *neraser-sync-row*))
+          (setq *neraser-sync-column* (funcall col-shift *neraser-sync-column*))
+          (setq *neraser-step-counter* (1+ *neraser-step-counter*))
+          (neraser-check-victory)
+          (neraser-draw-board)
+          (neraser-goto-cell *neraser-sync-row* *neraser-sync-column*))
+      (message (format "Cannot move current sync %s" dirstring)))))
+
+(defun neraser-move-up ()
+  "Make a turn by moving sync up"
+  (interactive)
+  (neraser-generic-move '1- 'identity "up"))
+
+(defun neraser-move-down ()
+  "Make a turn by moving sync down"
+  (interactive)
+  (neraser-generic-move '1+ 'identity "down"))
+
+(defun neraser-move-left ()
+  "Make a turn by moving sync left"
+  (interactive)
+  (neraser-generic-move 'identity '1- "left"))
+
+(defun neraser-move-right ()
+  "Make a turn by moving sync right"
+  (interactive)
+  (neraser-generic-move 'identity '1+ "right"))
+
+(defun neraser-check-victory ()
+  "Check if victory or loss condition (weak) has been reached"
+  (cl-labels ((victory-key (board-elem)
+                           (cond
+                            ((eq (car board-elem) '*c-sync*)
+                             (nthelt 0 (cdr board-elem)))
+                            ((eq (car board-elem) '*sync*)
+                             (cdr board-elem))
+                            (t 0))))
+    (let ((victory-index (position 0 *neraser-board*
+                                   :key #'victory-key
+                                   :test-not 'eq)))
+      (if (null victory-index)
+          (message "Congratulations!")))))
+
+
+  
