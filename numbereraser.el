@@ -137,7 +137,7 @@ Returns nil if load failed, t otherwise"
                               (if (and (integerp (cdr loadel))
                                        (>= (cdr loadel) 1))
                                   (aset *neraser-initial-board* i loadel)
-                                (print (format "Sync element without proper value at index %d\n" i))
+                                (message (format "Sync element without proper value at index %d" i))
                                 (return-from loader nil)))
                              ;; cell has either a positive integer or a 2-element vector
                              ('*cell*
@@ -145,21 +145,20 @@ Returns nil if load failed, t otherwise"
                                ((integerp (cdr loadel))
                                 (if (>= (cdr loadel) 1)
                                     (aset *neraser-initial-board* i `(*cell* . [,(cdr loadel) 1]))
-                                  (print (format "Cell element without proper value at index %d \n" i))
+                                  (message (format "Cell element without proper value at index %d" i))
                                   (return-from loader nil)))
                                ((and (arrayp (cdr loadel))
                                      (> (length (cdr loadel)) 1))
                                 (if (and (>= (elt (cdr loadel) 0) 1)
                                          (> (elt (cdr loadel) 1) 0))
                                     (aset *neraser-initial-board* i `(*cell* . ,(subseq (cdr loadel) 0 2)))
-                                  (print (format "Cell element without proper value at index %d\n" i))
+                                  (message (format "Cell element without proper value at index %d" i))
                                   (return-from loader nil)))
                                (t
-                                (print (format "Cell element without proper value at index %d\n" i))
+                                (message (format "Cell element without proper value at index %d" i))
                                 (return-from loader nil)))))
-                             
-                          (print (format "Unexpected board element at index %d\n" i))
-                          (return-from loader nil)))
+
+                          (message (format "Empty board element at index %d" i))))
               (setf *neraser-board* (copy-tree *neraser-initial-board* t))
               ;; return value here
               t)
@@ -209,7 +208,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
   "Prepare to start the game on nth map"
   ;; prepare board by loading map
   (or (neraser-load-map (nth n *neraser-default-maps*))
-      (print "Failed to load map ((( \n"))
+      (message "Failed to load map"))
   ;; reset step counter to zero
   (setf *neraser-step-counter* 0)
   ;; select first sync
