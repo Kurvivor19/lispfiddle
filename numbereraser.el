@@ -131,16 +131,16 @@ Returns nil if load failed, t otherwise"
               (setf *neraser-initial-board* (make-vector (* *neraser-rows* *neraser-columns*) nil))
               (dovector (i (initel *neraser-initial-board*) (loadel board))
                         (if (and (listp loadel) loadel)
-                            (cond
+                            (cl-case (car loadel)
                              ;; sync must have an integer value greater then 0 in its second cons cell
-                             ((eq (car loadel) '*sync*)
+                             ('*sync*
                               (if (and (integerp (cdr loadel))
                                        (>= (cdr loadel) 1))
                                   (aset *neraser-initial-board* i loadel)
                                 (print (format "Sync element without proper value at index %d\n" i))
                                 (return-from loader nil)))
                              ;; cell has either a positive integer or a 2-element vector
-                             ((eq (car loadel) '*cell*)
+                             ('*cell*
                               (cond
                                ((integerp (cdr loadel))
                                 (if (>= (cdr loadel) 1)
@@ -151,8 +151,7 @@ Returns nil if load failed, t otherwise"
                                      (> (length (cdr loadel)) 1))
                                 (if (and (>= (elt (cdr loadel) 0) 1)
                                          (> (elt (cdr loadel) 1) 0))
-                                    (aset *neraser-initial-board* i `(*cell* . [,(elt (cdr loadel) 0)
-                                                                                ,(elt (cdr loadel) 0)]))
+                                    (aset *neraser-initial-board* i `(*cell* . ,(subseq (cdr loadel) 0 2)))
                                   (print (format "Cell element without proper value at index %d\n" i))
                                   (return-from loader nil)))
                                (t
