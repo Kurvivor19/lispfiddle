@@ -267,7 +267,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
     (if prev-sync-index
         (deconstruct-index prev-sync-index *neraser-sync-row* *neraser-sync-column*)
       (deconstruct-index (position '(*sync* *c-sync*) *neraser-board*
-                                   :key car
+                                   :key 'car
                                    :test 'eq-left2
                                    :start current-sync-index
                                    :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*)
