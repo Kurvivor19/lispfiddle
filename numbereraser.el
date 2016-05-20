@@ -77,7 +77,7 @@ Initial board state is immutable. it is used to reset board back whenever need a
     (4 . neraser-face-cell-4)
     (5 . neraser-face-cell-5)))
 
-(defface neraser-face-sync-pos '((default . (:background "#698B22"))) "Color for active sync")
+(defface neraser-face-sync-pos '((default . (:background "#698B22" :foreground "#0000FF"))) "Color for active sync")
 (defface neraser-face-sync-zero '((default . (:background "#228B22" :foreground "#FFFF00"))) "Color for finished sync")
 (defface neraser-face-sync-neg '((default . (:background "#CD2626"))) "Color for a failed sync")
 
@@ -155,7 +155,7 @@ Returns nil if load failed, t otherwise"
                              ('*sync*
                               (if (and (integerp (cdr loadel))
                                        (>= (cdr loadel) 1))
-                                  (aset *neraser-initial-board* i loadel)
+                                  (aset *neraser-initial-board* i `(*sync* . [,(cdr loadel) 0 0]))
                                 (message (format "Sync element without proper value at index %d" i))
                                 (return-from loader nil)))
                              ;; cell has either a positive integer or a 2-element vector
@@ -259,16 +259,16 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
 (defun neraser-next-sync ()
   "Find next sync and set current board position to it"
   (let* ((current-sync-index (neraser-cell-index *neraser-sync-row* *neraser-sync-column*))
-         (next-sync-index (position '(*sync* *c-sync*) *neraser-board*
+         (next-sync-index (position '*sync* *neraser-board*
                                     :key 'car
-                                    :test 'eq-left2
+                                    :test 'eq
                                     :start (1+ current-sync-index)
                                     :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*))))
     (if next-sync-index
         (deconstruct-index next-sync-index *neraser-sync-row* *neraser-sync-column*)
-      (deconstruct-index (position '(*sync* *c-sync*) *neraser-board*
+      (deconstruct-index (position '*sync* *neraser-board*
                                    :key 'car
-                                   :test 'eq-left2
+                                   :test 'eq
                                    :start 0
                                    :end (1+ current-sync-index))
                          *neraser-sync-row* *neraser-sync-column*))))
@@ -276,17 +276,17 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
 (defun neraser-prev-sync ()
   "Find prev sync and set current board position to it"
   (let* ((current-sync-index (neraser-cell-index *neraser-sync-row* *neraser-sync-column*))
-         (prev-sync-index (position '(*sync* *c-sync*) *neraser-board*
+         (prev-sync-index (position '*sync* *neraser-board*
                                     :key 'car
-                                    :test 'eq-left2
+                                    :test 'eq
                                     :start 0
                                     :end current-sync-index
                                     :from-end)))
     (if prev-sync-index
         (deconstruct-index prev-sync-index *neraser-sync-row* *neraser-sync-column*)
-      (deconstruct-index (position '(*sync* *c-sync*) *neraser-board*
+      (deconstruct-index (position '*sync* *neraser-board*
                                    :key 'car
-                                   :test 'eq-left2
+                                   :test 'eq
                                    :start current-sync-index
                                    :end (neraser-cell-index (1- *neraser-rows*) *neraser-columns*)
                                    :from-end)
@@ -333,8 +333,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
     ((*cell*)
      (or (assoc (nthelt 1 (cdr content)) *neraser-cell-faces*)
          'neraser-face-cell-5))
-    ((*sync*) 'neraser-face-sync-pos)
-    ((*c-sync*)
+    ((*sync*)
      (cl-case (signum (nthelt 0 (cdr content)))
        (-1 'neraser-face-sync-neg)
        (0 'neraser-face-sync-zero)
@@ -372,10 +371,6 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
      ((eq type '*cell*)
       (format "%2d/%1d" (nthelt 0 (cdr content)) (nthelt 1 (cdr content))))
      ((eq type '*sync*)
-      (if (eq 0 (cdr content)) ; test if sync cannot be moved anymore
-          "*VV*"
-        (replace-regexp-in-string " " "*" (format "%3d " (cdr content)))))
-     ((eq type '*c-sync*)
       (if (eq 0 (nthelt 0 (cdr content)))
           "*VV*"
         (replace-regexp-in-string " " "*" (format "%3d " (nthelt 0 (cdr content))))))
@@ -456,8 +451,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
         (future-sync (neraser-get-cell (funcall row-shift *neraser-sync-row*) (funcall col-shift *neraser-sync-column*))))
     (if (and current-sync
              future-sync
-             (or (eq (car current-sync) '*sync*)
-                 (eq (car current-sync) '*c-sync*))
+             (eq (car current-sync) '*sync*)
              (eq (car future-sync) '*cell*)
              (> (nthelt 1 (cdr future-sync)) 0))
         (progn
@@ -465,13 +459,11 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
           (message (format "Moving current sync %s" dirstring))
           (cl-destructuring-bind 
             (current-val current-cell current-count future-cell future-count)
-            (append (if (eq (car current-sync) '*sync*)
-                        (list (cdr current-sync) 0 0)
-                      (cdr current-sync))
+            (append (cdr current-sync)
                     (cdr future-sync) nil)
             (setcdr future-sync `[,(- current-val future-cell) ,future-cell ,(1- future-count)])
             (setcdr current-sync `[,current-cell ,current-count])
-            (setcar future-sync '*c-sync*)
+            (setcar future-sync '*sync*)
             (setcar current-sync '*cell*))
           (setq *neraser-sync-row* (funcall row-shift *neraser-sync-row*))
           (setq *neraser-sync-column* (funcall col-shift *neraser-sync-column*))
@@ -505,11 +497,10 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
   "Check if victory or loss condition (weak) has been reached"
   (cl-labels ((victory-key (board-elem)
                            (cond
-                            ((eq (car board-elem) '*c-sync*)
-                             (nthelt 0 (cdr board-elem)))
                             ((eq (car board-elem) '*sync*)
-                             (cdr board-elem))
-                            (t 0))))
+                             (nthelt 0 (cdr board-elem)))
+                            ((eq (car board-elem) '*cell*)
+                             0))))
     (let ((victory-index (position 0 *neraser-board*
                                    :key #'victory-key
                                    :test-not 'eq)))
