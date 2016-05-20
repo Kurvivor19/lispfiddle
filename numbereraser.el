@@ -62,6 +62,25 @@ Initial board state is immutable. it is used to reset board back whenever need a
 (defconst *neraser-cell-height* 4
   "number of lines in board cell including upper border (but not lower)")
 
+(defface neraser-face-cell-0 '((default . (:background "#98FB98"))) "Color of exhausted cells")
+(defface neraser-face-cell-1 '((default . (:background "#FAFAD2"))) "Color of cells with 1 traversal")
+(defface neraser-face-cell-2 '((default . (:background "#FFD700"))) "Color of cells with 2 traversals")
+(defface neraser-face-cell-3 '((default . (:background "#EEB422"))) "Color of cells with 3 traversals")
+(defface neraser-face-cell-4 '((default . (:background "#8B5742"))) "Color of cells with 4 traversals")
+(defface neraser-face-cell-5 '((default . (:background "#68228B"))) "Color of cells with 5 traversals")
+
+(defvar *neraser-cell-faces*
+  '((0 . neraser-face-cell-0)
+    (1 . neraser-face-cell-1)
+    (2 . neraser-face-cell-2)
+    (3 . neraser-face-cell-3)
+    (4 . neraser-face-cell-4)
+    (5 . neraser-face-cell-5)))
+
+(defface neraser-face-sync-pos '((default . (:background "#698B22"))) "Color for active sync")
+(defface neraser-face-sync-zero '((default . (:background "#228B22" :foreground "#FFFF00"))) "Color for finished sync")
+(defface neraser-face-sync-neg '((default . (:background "#CD2626"))) "Color for a failed sync")
+
 (defvar *neraser-default-maps*
   '(([4 1]
      [(*sync* . 7)
@@ -297,9 +316,34 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
   "Symbol that forms left boundary of a given cell"
   ?|)
 
+(defmacro color-cell-string (coord &rest body)
+  "Helper macro for coloring contents of the cells"
+  `(let* ((content (neraser-get-cell ,@coord))
+          (type (car content))
+          (string (progn ,@body))
+          (face (neraser-get-cell-face type content)))
+     (if face
+         (put-text-property 0 *neraser-cell-width* 'font-lock-face face string))
+     string))
+
+(defun neraser-get-cell-face (type content)
+  "Find out appropriate face for given cell"
+  (cl-case type
+    ((nil) nil)
+    ((*cell*)
+     (or (assoc (nthelt 1 (cdr content)) *neraser-cell-faces*)
+         'neraser-face-cell-5))
+    ((*sync*) 'neraser-face-sync-pos)
+    ((*c-sync*)
+     (cl-case (signum (nthelt 0 (cdr content)))
+       (-1 'neraser-face-sync-neg)
+       (0 'neraser-face-sync-zero)
+       (1 'neraser-face-sync-pos)))))
+
 (defun neraser-empty-space (row col)
   "Symbol that forms empty space of a given cell"
-  (make-string *neraser-cell-width* ?\s))
+  (color-cell-string (row col)
+                     (make-string *neraser-cell-width* ?\s)))
 
 (defun neraser-right-boundary (row)
   "Symbol that forms right boundary of a given row"
@@ -323,8 +367,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
 
 (defun neraser-cell-content (row col)
   "Form string based on cell's contents"
-  (let* ((content (neraser-get-cell row col))
-         (type (car content)))
+  (color-cell-string (row col)
     (cond
      ((eq type '*cell*)
       (format "%2d/%1d" (nthelt 0 (cdr content)) (nthelt 1 (cdr content))))
@@ -337,7 +380,7 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
           "*VV*"
         (replace-regexp-in-string " " "*" (format "%3d " (nthelt 0 (cdr content))))))
      ((or t (null content))
-      (neraser-empty-space row col)))))
+      (make-string *neraser-cell-width* ?\s)))))
 
 (defun neraser-draw-board ()
   "Display board in the game buffer"
@@ -366,7 +409,8 @@ Use C-n, C-f to switch between syncs, keyboard arrows to move them"
         (insert boundary)))
     (dotimes (col *neraser-columns*)
       (insert (neraser-lower-boundary (1- *neraser-rows*) col)))
-    (insert (neraser-lower-angle (1- *neraser-rows*)))))
+    (insert (neraser-lower-angle (1- *neraser-rows*)))
+    (insert (format "\n\nSteps: %d" *neraser-step-counter*))))
 
 (defun neraser-cursor-to-board-cell (row column)
   "Move cursor to the board cell with known coordinates"
