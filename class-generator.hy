@@ -78,8 +78,9 @@
                              army_id ~army-id
                              army-factions [~@(map HyString army-factions)]]
                             (defn --init-- [self]
-                              (.--init-- (super) {~@(interleave (map HyString class-grouping)
-                                                                (repeat 'True))})
+                              (apply .--init-- [(super ~class-name self)]
+                                     {~@(interleave (map HyString class-grouping)
+                                                    (repeat 'True))})
                               ~@(map (fn [key]
                                        `(.add-classes (. self ~(HySymbol key))
                                                       [~@(genexpr (HySymbol (. ut __name__))
@@ -118,7 +119,7 @@
                    faction ~(HyString faction)
                    army_id ~army-id]
                   (defn --init-- [self]
-                    (.--init-- (super))
+                    (.--init-- (super ~class-name self))
                     (for [det [~@(list-comp (HySymbol (. dt __name__))
                                             [dt detachment-list]
                                             (in faction (. dt army-factions)))]]
@@ -138,9 +139,11 @@
  (import [builder.games.wh40k8ed.rosters [detach_metadata]])
  (setv code (make-detach-classes all_unit_types detach-metadata))
  (with [fd (open "builder/games/wh40k8ed/gen_detachments.py" "a")]
+       (.write fd "\n")
        (.write fd (disassemble code True)))
  (reload builder.games.wh40k8ed.gen_detachments)
  (import [builder.games.wh40k8ed.gen_detachments [detachments]])
  (setv code (make-army-classes (collect-factions all_unit_types) detachments))
  (with [fd (open "builder/games/wh40k8ed/gen_detachments.py" "a")]
+       (.write fd "\n\n")
        (.write fd (disassemble code True))))
