@@ -16,6 +16,11 @@
 
 (defn filter-unit-classes [unit-classes faction]
   (list-comp uc [uc unit-classes] (.check_faction uc faction)))
+  ;; (for [uc unit-classes]
+  ;;   (print (. uc type_name))
+  ;;   (if (.check_faction uc faction)
+  ;;     (yield uc))))
+
 
 (import re [string [capwords]])
 
@@ -23,7 +28,9 @@
   (re.sub "[^0-9a-zA-Z]+" "_" (.lower fname)))
 
 (defn fix-faction-name [fname]
-  (capwords (.lower fname)))
+  (if (= "<" (. fname [0]))
+    (.format "<{}>" (capwords (.lower (cut fname 1 -1))))
+    (capwords (.lower fname))))
 
 (defmacro skip [&body]
   '(do))
@@ -67,20 +74,26 @@
         (def
           class-name (HySymbol (.format "{}_{}" (. meta-base __name__) (fix-faction-string faction)))
           army-id (HyString (.format "{}_{}" (. meta-base army_id) (fix-faction-string faction)))
-          army-name (HyString (.format "{} ({})" (fix-faction-name faction) (. meta-base army_name))))
-        (unless army-factions
+          army-name (HyString (.format "{} ({})" (fix-faction-name faction) (. meta-base army_name)))
+          alternate-fac-list (.get alternate_factions faction []))
+        (if army-factions
+          ;; ensure incompabile factions are not composed into the same army
+          (when (in faction exclusive_factions)
+            (setv army-factions (list-comp af [af army-factions] (not (in af (. exclusive_factions [faction]))))))
           (setv army-factions [faction]))
         ; (print "Class name: " class-name "Army id: " army-id "Army name: " army-name)
         (setv class-cand [class-name])
         (setv class-def [`(defclass ~class-name [~(HySymbol (. meta-base __name__))]
                             [army_name ~army-name
-                             faction ~(HyString faction)
+                             faction_base ~(HyString faction)
+                             alternate_factions [~@(map HyString alternate-fac-list)]
                              army_id ~army-id
                              army-factions [~@(map HyString army-factions)]]
-                            (defn --init-- [self]
+                            (defn --init-- [self &optional [parent None]]
                               (apply .--init-- [(super ~class-name self)]
                                      {~@(interleave (map HyString class-grouping)
-                                                    (repeat 'True))})
+                                                    (repeat 'True))
+                                      "parent" parent})
                               ~@(map (fn [key]
                                        `(.add-classes (. self ~(HySymbol key))
                                                       [~@(genexpr (HySymbol (. ut __name__))
@@ -93,6 +106,10 @@
         detach-defs '()
         detach-class-list []]
     (for [faction factions]
+      ;; we skip here factions that go under groupings of alternatives
+      (when (in faction (apply chain (.values alternate_factions)))
+        (print "Skipping faction" faction)
+        (continue))
       (print "For faction" faction)
       (with-gensyms [defs classes]
         (for [single-meta detach-metadata]
@@ -108,6 +125,10 @@
   (let [army-defs '()
         army-class-list []]
     (for [faction factions]
+      ;; we skip here factions that go under groupings of alternatives
+      (when (in faction (apply chain (.values alternate_factions)))
+        (print "Skipping faction" faction)
+        (continue))
       (print "Army for faction" faction)
       (def
         class-name (HySymbol (.format "{}8ed" (fix-faction-name (fix-faction-string faction))))
@@ -116,7 +137,8 @@
       (.append army-defs
                `(defclass ~class-name [Wh40k8edBase]
                   [army_name ~army-name
-                   faction ~(HyString faction)
+                   faction_base ~(HyString faction)
+                   alternate_factions [~@(map HyString (.get alternate_factions faction []))]
                    army_id ~army-id]
                   (defn --init-- [self]
                     (.--init-- (super ~class-name self))
@@ -124,7 +146,7 @@
                                             [dt detachment-list]
                                             (in faction (. dt army-factions)))]]
                       (.build_detach (. self det) det ~(HyString faction)
-                                     :group (. det faction))))))
+                                     :group (. det faction_base))))))
       (.append army-class-list class-name))
     `(do
       ~@army-defs
@@ -133,17 +155,23 @@
 ;; perform code generation
 (do
  (import os)
- (os.chdir "d:/hq-git")
- (import builder.games.wh40k8ed.gen_detachments)
- (import [builder.games.wh40k8ed.gen_detachments [all_unit_types]])
- (import [builder.games.wh40k8ed.rosters [detach_metadata]])
+ (os.chdir "/home/survivor/Development/hq")
+ (import [builder.games.wh40k8ed.gen_metadata [all_unit_types
+                                               exclusive_factions
+                                               detach_metadata
+                                               alternate_factions]]))
+
+(do
  (setv code (make-detach-classes all_unit_types detach-metadata))
  (with [fd (open "builder/games/wh40k8ed/gen_detachments.py" "a")]
        (.write fd "\n")
        (.write fd (disassemble code True)))
- (reload builder.games.wh40k8ed.gen_detachments)
- (import [builder.games.wh40k8ed.gen_detachments [detachments]])
+ (reload builder.games.wh40k8ed)
+ (import [builder.games.wh40k8ed.gen_detachments [detachments]]))
+
+(do
  (setv code (make-army-classes (collect-factions all_unit_types) detachments))
- (with [fd (open "builder/games/wh40k8ed/gen_detachments.py" "a")]
-       (.write fd "\n\n")
+ (with [fd (open "builder/games/wh40k8ed/gen_armies.py" "a")]
+       (.write fd "\n")
        (.write fd (disassemble code True))))
+
