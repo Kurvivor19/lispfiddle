@@ -15,8 +15,9 @@
   (list res))
 
 (defn filter-unit-classes [unit-classes faction]
-  (list-comp uc [uc unit-classes] (.check_faction uc faction)))
-  ;; (for [uc unit-classes]
+  (setv fac-list (+ [faction] (.get alternate_factions faction [])))
+  (list-comp uc [uc unit-classes] (any (genexpr (.check_faction uc sf) [sf fac-list]))))
+  ;; (for a[uc unit-classes]
   ;;   (print (. uc type_name))
   ;;   (if (.check_faction uc faction)
   ;;     (yield uc))))
@@ -133,7 +134,12 @@
       (def
         class-name (HySymbol (.format "{}8ed" (fix-faction-name (fix-faction-string faction))))
         army-name (HyString (.format "Army of {}" (fix-faction-name faction)))
-        army-id (HyString (fix-faction-string faction)))
+        army-id (HyString (fix-faction-string faction))
+        filtered-detachments (list-comp dt
+                                        [dt detachment-list]
+                                        (in faction (. dt army-factions))))
+      (unless (any (genexpr (issubclass dt DetachFort) [dt filtered-detachments]))
+        (.append filtered-detachments DetachFort))
       (.append army-defs
                `(defclass ~class-name [Wh40k8edBase]
                   [army_name ~army-name
@@ -143,8 +149,7 @@
                   (defn --init-- [self]
                     (.--init-- (super ~class-name self))
                     (for [det [~@(list-comp (HySymbol (. dt __name__))
-                                            [dt detachment-list]
-                                            (in faction (. dt army-factions)))]]
+                                            [dt filtered-detachments])]]
                       (.build_detach (. self det) det ~(HyString faction)
                                      :group (. det faction_base))))))
       (.append army-class-list class-name))
@@ -155,7 +160,7 @@
 ;; perform code generation
 (do
  (import os)
- (os.chdir "/home/survivor/Development/hq")
+ (os.chdir "d:/hq-git")
  (import [builder.games.wh40k8ed.gen_metadata [all_unit_types
                                                exclusive_factions
                                                detach_metadata
@@ -165,11 +170,11 @@
  (setv code (make-detach-classes all_unit_types detach-metadata))
  (with [fd (open "builder/games/wh40k8ed/gen_detachments.py" "a")]
        (.write fd "\n")
-       (.write fd (disassemble code True)))
- (reload builder.games.wh40k8ed)
- (import [builder.games.wh40k8ed.gen_detachments [detachments]]))
+       (.write fd (disassemble code True))))
 
 (do
+ (import [builder.games.wh40k8ed.gen_detachments [detachments]])
+ (import [builder.games.wh40k8ed.rosters [DetachFort]])
  (setv code (make-army-classes (collect-factions all_unit_types) detachments))
  (with [fd (open "builder/games/wh40k8ed/gen_armies.py" "a")]
        (.write fd "\n")
