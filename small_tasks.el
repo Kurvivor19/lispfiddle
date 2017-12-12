@@ -25,7 +25,7 @@
   "Remove an instance of character C from hash table HT
 Return nil if no instances of C remain in HT"
   (let ((old (gethash c ht 0)))
-    (if (and try (< 2 old))
+    (if (and try (> 2 old))
         nil
       (if (> 1 (puthash c (1- (gethash c ht 0)) ht))
           (remhash c ht)
@@ -54,10 +54,15 @@ Return nil if no instances of C remain in HT"
           (setq end (1+ end))
           (setq ccnt (hash-table-count cand-chars)))
         (setq cand (substring sstr beg end))
+
+        (print (format "first candidate: %s" cand))
+
         ;; shorten it as much as possible
         (while (remove-from-hash (aref sstr beg) cand-chars t)
           (setq beg (1+ beg)))
         (setq cand (substring sstr beg end))
+
+        (print (format "after shortening %s" cand))
         (setq res cand)
         ;; check other variants
         (while (< end slen)
@@ -69,9 +74,11 @@ Return nil if no instances of C remain in HT"
           (setq ccnt (hash-table-count cand-chars))
           ;; another candidate is found
           (when (= ccnt fcnt)
+            (print (format "next candidate: %s" (substring sstr beg end)))
             ;; only change candidate if it was shortened
             (while (remove-from-hash (aref sstr beg) cand-chars t)
               (setq beg (1+ beg))
-              (setq cand (substring sstr beg end)))
+              (setq cand (substring sstr beg end))
+              (print (format "shortened candidate: %s" cand)))
             (setq res cand)))
         res))))
